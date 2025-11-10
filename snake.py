@@ -30,21 +30,28 @@ class CurriculumCallback(BaseCallback):
                 print(f"\n{'='*60}")
                 print(f"ADVANCING TO STAGE {self.current_stage + 1}/{len(self.curriculum_stages)}")
                 print(f"Stage: {stage_config['name']}")
-                print(f"Grid Size: {stage_config['grid_size']}x{stage_config['grid_size']}")
+                print(f"Grid Size: {stage_config['grid_size']}x{stage_config['grid_size']} pixels")
                 print(f"Initial Snake Length: {stage_config['initial_snake_length']}")
                 print(f"{'='*60}\n")
                 
-                # Create new environment with updated parameters
-                new_env = gym.make(
-                    "Snake-v0",
-                    render_mode=None,
-                    grid_size=stage_config['grid_size'],
-                    initial_snake_length=stage_config['initial_snake_length']
-                )
-                
-                # Update the model's environment
-                self.model.set_env(new_env)
-                print("Environment updated successfully!\n")
+                # Try to create new environment with updated parameters
+                try:
+                    new_env = gym.make(
+                        "Snake-v0",
+                        render_mode=None,
+                        grid_size=stage_config['grid_size'],
+                        initial_snake_length=stage_config['initial_snake_length']
+                    )
+                    
+                    # Update the model's environment
+                    self.model.set_env(new_env)
+                    print("✓ Environment updated successfully!\n")
+                    
+                except TypeError as e:
+                    print(f"⚠ WARNING: Could not update environment parameters.")
+                    print(f"   Your Snake environment doesn't support grid_size/initial_snake_length yet.")
+                    print(f"   Continuing with current environment settings.\n")
+                    print(f"   Error: {e}\n")
                 
         return True
 
@@ -88,30 +95,33 @@ def create_curriculum_stages():
     """
     Define curriculum learning stages
     Each stage makes the task progressively harder
+    
+    NOTE: To use different grid sizes and snake lengths, your Snake environment
+    must be modified to accept these parameters in __init__().
     """
     stages = [
         {
             "name": "Stage 1: Tiny Grid - Learn Basics",
             "description": "Very small environment to learn basic movement and apple collection",
-            "grid_size": 5,
+            "grid_size": 50,  # 5x5 cells (each cell is 10 pixels)
             "initial_snake_length": 3
         },
         {
             "name": "Stage 2: Small Grid",
             "description": "Small grid to improve navigation and survival",
-            "grid_size": 10,
+            "grid_size": 100,  # 10x10 cells
             "initial_snake_length": 3
         },
         {
             "name": "Stage 3: Medium Grid with Long Snake",
             "description": "Medium grid but start with a long snake to learn long-body navigation",
-            "grid_size": 15,
+            "grid_size": 150,  # 15x15 cells
             "initial_snake_length": 20
         },
         {
             "name": "Stage 4: Full Challenge",
             "description": "Full-size environment with normal starting length",
-            "grid_size": 20,
+            "grid_size": 200,  # 20x20 cells
             "initial_snake_length": 3
         }
     ]
@@ -148,13 +158,21 @@ def train_with_curriculum():
     # Create initial environment with Stage 1 parameters
     print("Creating initial environment (Stage 1)...")
     initial_stage = curriculum_stages[0]
-    env = gym.make(
-        "Snake-v0",
-        render_mode=None,
-        grid_size=initial_stage['grid_size'],
-        initial_snake_length=initial_stage['initial_snake_length']
-    )
-    print(f"Environment created: {initial_stage['grid_size']}x{initial_stage['grid_size']} grid, snake length {initial_stage['initial_snake_length']}\n")
+    
+    try:
+        env = gym.make(
+            "Snake-v0",
+            render_mode=None,
+            grid_size=initial_stage['grid_size'],
+            initial_snake_length=initial_stage['initial_snake_length']
+        )
+        print(f"✓ Environment created: {initial_stage['grid_size']}x{initial_stage['grid_size']} pixels, snake length {initial_stage['initial_snake_length']}\n")
+    except TypeError as e:
+        print(f"⚠ WARNING: Your Snake environment doesn't support grid_size/initial_snake_length parameters yet.")
+        print(f"   Creating environment with default settings (500x500 pixels, snake length 3).")
+        print(f"   The curriculum will still work, but won't change environment size between stages.\n")
+        env = gym.make("Snake-v0", render_mode=None)
+        print(f"✓ Environment created with default settings\n")
     
     # Create model directory
     models_dir = "models/snake_curriculum"
