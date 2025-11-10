@@ -57,10 +57,11 @@ class SnakeEnv(gym.Env):
         # Define the action space: 4 discrete actions (left, right, up, down)
         self.action_space = spaces.Discrete(4)
         
-        # Define the observation space: a Box with size based on snake length goal and other game parameters
+        # FIXED observation space bounds (independent of grid size)
+        # Using normalized coordinates between -1 and 1
         self.observation_space = spaces.Box(
-            low=-self.tableSizeObs,
-            high=self.tableSizeObs,
+            low=-1.0,
+            high=1.0,
             shape=(5 + STACKED_ACTIONS,),
             dtype=np.float64
         )
@@ -117,7 +118,7 @@ class SnakeEnv(gym.Env):
             if current_distance < prev_distance:
                 reward += 1
             else:
-                reward -= 1
+                reward -= 1.5
 
         # Small penalty for each step (optional)
         reward -= 0.1
@@ -132,7 +133,14 @@ class SnakeEnv(gym.Env):
         apple_delta_x = self.apple_position[0] - head_x
         apple_delta_y = self.apple_position[1] - head_y
 
-        observation = [head_x, head_y, apple_delta_x, apple_delta_y, snake_length] + list(self.prev_actions)
+        # Normalize coordinates to [-1, 1] range
+        norm_head_x = (head_x / self.tableSize) * 2 - 1
+        norm_head_y = (head_y / self.tableSize) * 2 - 1
+        norm_apple_delta_x = apple_delta_x / self.tableSize
+        norm_apple_delta_y = apple_delta_y / self.tableSize
+        norm_snake_length = snake_length / 100.0  # Normalize by max expected length
+
+        observation = [norm_head_x, norm_head_y, norm_apple_delta_x, norm_apple_delta_y, norm_snake_length] + list(self.prev_actions)
         observation = np.array(observation, dtype=np.float64)
 
         return observation, reward, terminated, truncated, info
@@ -182,7 +190,14 @@ class SnakeEnv(gym.Env):
         for _ in range(STACKED_ACTIONS):
             self.prev_actions.append(-1)
 
-        observation = [head_x, head_y, apple_delta_x, apple_delta_y, snake_length] + list(self.prev_actions)
+        # Normalize coordinates to [-1, 1] range
+        norm_head_x = (head_x / self.tableSize) * 2 - 1
+        norm_head_y = (head_y / self.tableSize) * 2 - 1
+        norm_apple_delta_x = apple_delta_x / self.tableSize
+        norm_apple_delta_y = apple_delta_y / self.tableSize
+        norm_snake_length = snake_length / 100.0  # Normalize by max expected length
+
+        observation = [norm_head_x, norm_head_y, norm_apple_delta_x, norm_apple_delta_y, norm_snake_length] + list(self.prev_actions)
         observation = np.array(observation, dtype=np.float64)
 
         return observation, {}
