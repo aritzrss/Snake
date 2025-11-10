@@ -25,14 +25,26 @@ class CurriculumCallback(BaseCallback):
             if timesteps_in_stage >= self.stage_timesteps[self.current_stage]:
                 self.current_stage += 1
                 self.stage_start_timestep = self.num_timesteps
+                
+                stage_config = self.curriculum_stages[self.current_stage]
                 print(f"\n{'='*60}")
                 print(f"ADVANCING TO STAGE {self.current_stage + 1}/{len(self.curriculum_stages)}")
-                print(f"Stage config: {self.curriculum_stages[self.current_stage]}")
+                print(f"Stage: {stage_config['name']}")
+                print(f"Grid Size: {stage_config['grid_size']}x{stage_config['grid_size']}")
+                print(f"Initial Snake Length: {stage_config['initial_snake_length']}")
                 print(f"{'='*60}\n")
                 
-                # Update environment with new stage parameters
-                # Note: This requires your Snake environment to support these parameters
-                # You might need to recreate the environment here
+                # Create new environment with updated parameters
+                new_env = gym.make(
+                    "Snake-v0",
+                    render_mode=None,
+                    grid_size=stage_config['grid_size'],
+                    initial_snake_length=stage_config['initial_snake_length']
+                )
+                
+                # Update the model's environment
+                self.model.set_env(new_env)
+                print("Environment updated successfully!\n")
                 
         return True
 
@@ -79,24 +91,28 @@ def create_curriculum_stages():
     """
     stages = [
         {
-            "name": "Stage 1: Small Grid - Learn Basics",
-            "description": "Small environment to learn basic movement and apple collection",
-            "config": {"grid_size": 10}  # Modify based on your env's parameters
+            "name": "Stage 1: Tiny Grid - Learn Basics",
+            "description": "Very small environment to learn basic movement and apple collection",
+            "grid_size": 5,
+            "initial_snake_length": 3
         },
         {
-            "name": "Stage 2: Medium Grid",
-            "description": "Medium-sized grid to learn better navigation",
-            "config": {"grid_size": 15}
+            "name": "Stage 2: Small Grid",
+            "description": "Small grid to improve navigation and survival",
+            "grid_size": 10,
+            "initial_snake_length": 3
         },
         {
-            "name": "Stage 3: Larger Grid",
-            "description": "Larger grid closer to final challenge",
-            "config": {"grid_size": 18}
+            "name": "Stage 3: Medium Grid with Long Snake",
+            "description": "Medium grid but start with a long snake to learn long-body navigation",
+            "grid_size": 15,
+            "initial_snake_length": 20
         },
         {
             "name": "Stage 4: Full Challenge",
-            "description": "Full-size environment",
-            "config": {"grid_size": 20}
+            "description": "Full-size environment with normal starting length",
+            "grid_size": 20,
+            "initial_snake_length": 3
         }
     ]
     
@@ -115,21 +131,30 @@ def train_with_curriculum():
     curriculum_stages = create_curriculum_stages()
     
     # Timesteps per stage (adjust based on your needs)
-    stage_timesteps = [50000, 100000, 150000, 200000]  # Total: 500k timesteps
+    # More time for the harder stages
+    stage_timesteps = [30000, 70000, 150000, 250000]  # Total: 500k timesteps
     
     # Print curriculum plan
     print("\nCURRICULUM PLAN:")
     for i, stage in enumerate(curriculum_stages):
         print(f"\n{stage['name']}:")
         print(f"  Description: {stage['description']}")
+        print(f"  Grid Size: {stage['grid_size']}x{stage['grid_size']}")
+        print(f"  Initial Snake Length: {stage['initial_snake_length']}")
         print(f"  Timesteps: {stage_timesteps[i]:,}")
-        print(f"  Config: {stage['config']}")
     
     print("\n" + "="*60 + "\n")
     
-    # Create initial environment (Stage 1)
-    # Note: You may need to modify your Snake environment to accept these parameters
-    env = gym.make("Snake-v0", render_mode=None)
+    # Create initial environment with Stage 1 parameters
+    print("Creating initial environment (Stage 1)...")
+    initial_stage = curriculum_stages[0]
+    env = gym.make(
+        "Snake-v0",
+        render_mode=None,
+        grid_size=initial_stage['grid_size'],
+        initial_snake_length=initial_stage['initial_snake_length']
+    )
+    print(f"Environment created: {initial_stage['grid_size']}x{initial_stage['grid_size']} grid, snake length {initial_stage['initial_snake_length']}\n")
     
     # Create model directory
     models_dir = "models/snake_curriculum"
@@ -138,6 +163,7 @@ def train_with_curriculum():
     os.makedirs(logs_dir, exist_ok=True)
     
     # Initialize PPO model
+    print("Initializing PPO model...")
     model = PPO(
         "MlpPolicy",
         env,
@@ -152,6 +178,7 @@ def train_with_curriculum():
         ent_coef=0.01,  # Encourage exploration
         tensorboard_log=logs_dir
     )
+    print("Model initialized!\n")
     
     # Create callbacks
     metrics_callback = MetricsCallback(check_freq=5000)
@@ -160,6 +187,7 @@ def train_with_curriculum():
     # Train the model
     print("Starting training...\n")
     total_timesteps = sum(stage_timesteps)
+    print(f"Total training timesteps: {total_timesteps:,}\n")
     
     try:
         model.learn(

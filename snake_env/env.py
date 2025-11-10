@@ -12,24 +12,19 @@ SNAKE_LEN_GOAL = 30
 # History of actions in the state
 STACKED_ACTIONS = 5
 
-# Define the size of the game table for observation and gameplay
-tableSizeObs = 500 # control of the grid size
-tableSize = 500
-halfTable = int(tableSize / 2)
-
 # Initialize max score
 max_score = 0
 
 # Function to handle collision with apple and update score
-def collision_with_apple(apple_position, score):
+def collision_with_apple(apple_position, score, table_size):
     # Generate new random apple position within the game table
-    apple_position = [random.randrange(1, tableSize // 10) * 10, random.randrange(1, tableSize // 10) * 10]
+    apple_position = [random.randrange(1, table_size // 10) * 10, random.randrange(1, table_size // 10) * 10]
     score += 1  # Increment the score
     return apple_position, score
 
 # Function to check if the snake head collides with game boundaries
-def collision_with_boundaries(snake_head):
-    if snake_head[0] >= tableSize or snake_head[0] < 0 or snake_head[1] >= tableSize or snake_head[1] < 0:
+def collision_with_boundaries(snake_head, table_size):
+    if snake_head[0] >= table_size or snake_head[0] < 0 or snake_head[1] >= table_size or snake_head[1] < 0:
         return True
     else:
         return False
@@ -50,21 +45,28 @@ class SnakeEnv(gym.Env):
     }
     
 
-    def __init__(self, render_mode=None, action_size=1, render_fps=10):
+    def __init__(self, render_mode=None, action_size=1, render_fps=10, grid_size=500, initial_snake_length=3):
         super(SnakeEnv, self).__init__()
+        
+        # Store grid configuration
+        self.tableSize = grid_size  # Support for curriculum learning
+        self.tableSizeObs = grid_size
+        self.halfTable = int(self.tableSize / 2)
+        self.initial_snake_length = initial_snake_length
+        
         # Define the action space: 4 discrete actions (left, right, up, down)
         self.action_space = spaces.Discrete(4)
         
         # Define the observation space: a Box with size based on snake length goal and other game parameters
         self.observation_space = spaces.Box(
-            low=-tableSizeObs,
-            high=tableSizeObs,
+            low=-self.tableSizeObs,
+            high=self.tableSizeObs,
             shape=(5 + STACKED_ACTIONS,),
             dtype=np.float64
         )
         
         # Initialize game display and reward variables
-        self.img = np.zeros((tableSize, tableSize, 3), dtype='uint8')
+        self.img = np.zeros((self.tableSize, self.tableSize, 3), dtype='uint8')
         self.prev_reward = 0
         self.total_reward = 0
         self.score = 0
@@ -93,7 +95,7 @@ class SnakeEnv(gym.Env):
 
         # Check if snake eats the apple
         if self.snake_head == self.apple_position:
-            self.apple_position, self.score = collision_with_apple(self.apple_position, self.score)
+            self.apple_position, self.score = collision_with_apple(self.apple_position, self.score, self.tableSize)
             self.snake_position.insert(0, list(self.snake_head))
             reward += 10  # Reward for eating an apple
         else:
@@ -101,7 +103,7 @@ class SnakeEnv(gym.Env):
             self.snake_position.pop()
 
         # Check for collisions (with boundaries or self)
-        terminated = collision_with_boundaries(self.snake_head) or collision_with_self(self.snake_position)
+        terminated = collision_with_boundaries(self.snake_head, self.tableSize) or collision_with_self(self.snake_position)
         truncated = False
 
         # Handle termination (game over) scenario
@@ -120,8 +122,8 @@ class SnakeEnv(gym.Env):
         # Small penalty for each step (optional)
         reward -= 0.1
 
-        # Information dictionary
-        info = {}
+        # Information dictionary - include snake length for tracking
+        info = {'snake_length': len(self.snake_position)}
 
         # Create observation of the current state
         head_x = self.snake_head[0]
@@ -139,19 +141,17 @@ class SnakeEnv(gym.Env):
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
         # Reset game board
-        self.img = np.zeros((tableSize, tableSize, 5), dtype='uint8')
+        self.img = np.zeros((self.tableSize, self.tableSize, 3), dtype='uint8')
         
-        # Reset snake position
-        self.snake_position = [
-            [halfTable, halfTable],
-            [halfTable - 10, halfTable],
-            [halfTable - 20, halfTable]
-        ]
+        # Create initial snake position based on initial_snake_length
+        self.snake_position = []
+        for i in range(self.initial_snake_length):
+            self.snake_position.append([self.halfTable - i * 10, self.halfTable])
         
         # Generate random apple position
         self.apple_position = [
-            random.randrange(1, tableSize // 10) * 10,
-            random.randrange(1, tableSize // 10) * 10
+            random.randrange(1, self.tableSize // 10) * 10,
+            random.randrange(1, self.tableSize // 10) * 10
         ]
         
         # Update max score if needed
@@ -161,7 +161,7 @@ class SnakeEnv(gym.Env):
         
         # Reset score and snake head position
         self.score = 0
-        self.snake_head = [halfTable, halfTable]
+        self.snake_head = [self.halfTable, self.halfTable]
 
         # Initialize direction of the snake
         self.direction = 1
@@ -209,7 +209,7 @@ class SnakeEnv(gym.Env):
     # Update the UI with the current positions of the snake and the apple
     def _update_ui(self):
         # Clear the game board
-        self.img = np.zeros((tableSize, tableSize, 3), dtype='uint8')
+        self.img = np.zeros((self.tableSize, self.tableSize, 3), dtype='uint8')
         
         # Draw apple on the board
         cv2.rectangle(
@@ -221,8 +221,7 @@ class SnakeEnv(gym.Env):
         )
         
         # Draw snake on the board
-        for _i,position in enumerate(self.snake_position):
-
+        for _i, position in enumerate(self.snake_position):
             cv2.rectangle(
                 self.img,
                 (position[0], position[1]),
