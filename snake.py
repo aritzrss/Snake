@@ -6,17 +6,19 @@ from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.vec_env import DummyVecEnv
 import os
 from datetime import datetime
+from curriculum_wrapper import CurriculumWrapper
 
 class CurriculumCallback(BaseCallback):
     """
     Callback to manage curriculum learning progression
     """
-    def __init__(self, curriculum_stages, stage_timesteps, verbose=0):
+    def __init__(self, curriculum_stages, stage_timesteps, curriculum_env=None, verbose=0):
         super().__init__(verbose)
         self.curriculum_stages = curriculum_stages
         self.stage_timesteps = stage_timesteps
         self.current_stage = 0
         self.stage_start_timestep = 0
+        self.curriculum_env = curriculum_env  # Store reference to wrapped environment
         
     def _on_step(self) -> bool:
         # Check if we should progress to next stage
@@ -34,24 +36,14 @@ class CurriculumCallback(BaseCallback):
                 print(f"Initial Snake Length: {stage_config['initial_snake_length']}")
                 print(f"{'='*60}\n")
                 
-                # Try to create new environment with updated parameters
-                try:
-                    new_env = gym.make(
-                        "Snake-v0",
-                        render_mode=None,
-                        grid_size=stage_config['grid_size'],
-                        initial_snake_length=stage_config['initial_snake_length']
-                    )
-                    
-                    # Update the model's environment
-                    self.model.set_env(new_env)
-                    print("✓ Environment updated successfully!\n")
-                    
-                except TypeError as e:
-                    print(f"⚠ WARNING: Could not update environment parameters.")
-                    print(f"   Your Snake environment doesn't support grid_size/initial_snake_length yet.")
-                    print(f"   Continuing with current environment settings.\n")
-                    print(f"   Error: {e}\n")
+                # Update the environment wrapper's curriculum stage
+                # This tells the wrapper to use new parameters on next reset
+                if hasattr(self.curriculum_env, 'set_curriculum_stage'):
+                    self.curriculum_env.set_curriculum_stage(self.current_stage)
+                    print("✓ Curriculum stage updated!\n")
+                else:
+                    print("⚠ WARNING: Environment doesn't support curriculum stages.")
+                    print("   Training will continue with current settings.\n")
                 
         return True
 
@@ -160,18 +152,25 @@ def train_with_curriculum():
     initial_stage = curriculum_stages[0]
     
     try:
-        env = gym.make(
+        base_env = gym.make(
             "Snake-v0",
             render_mode=None,
             grid_size=initial_stage['grid_size'],
             initial_snake_length=initial_stage['initial_snake_length']
         )
-        print(f"✓ Environment created: {initial_stage['grid_size']}x{initial_stage['grid_size']} pixels, snake length {initial_stage['initial_snake_length']}\n")
+        
+        # Wrap the environment with curriculum wrapper
+        env = CurriculumWrapper(base_env, curriculum_stages)
+        
+        print(f"✓ Environment created: {initial_stage['grid_size']}x{initial_stage['grid_size']} pixels, snake length {initial_stage['initial_snake_length']}")
+        print(f"✓ Wrapped with CurriculumWrapper for dynamic stage switching\n")
+        
     except TypeError as e:
         print(f"⚠ WARNING: Your Snake environment doesn't support grid_size/initial_snake_length parameters yet.")
         print(f"   Creating environment with default settings (500x500 pixels, snake length 3).")
         print(f"   The curriculum will still work, but won't change environment size between stages.\n")
-        env = gym.make("Snake-v0", render_mode=None)
+        base_env = gym.make("Snake-v0", render_mode=None)
+        env = CurriculumWrapper(base_env, curriculum_stages)
         print(f"✓ Environment created with default settings\n")
     
     # Create model directory
@@ -200,7 +199,7 @@ def train_with_curriculum():
     
     # Create callbacks
     metrics_callback = MetricsCallback(check_freq=5000)
-    curriculum_callback = CurriculumCallback(curriculum_stages, stage_timesteps)
+    curriculum_callback = CurriculumCallback(curriculum_stages, stage_timesteps, curriculum_env=env)
     
     # Train the model
     print("Starting training...\n")
